@@ -41,6 +41,10 @@ extern "C" {
 static const char* TAG = "MAIN";
 
 static esp_mqtt_client_handle_t mqtt_client;
+static volatile bool     s_mqtt_connected  = false;
+static volatile uint32_t g_cmds_dispatched = 0;
+
+extern uint32_t g_i2c_errors;
 
 QueueHandle_t xPcfQueue     = NULL;
 QueueHandle_t xSectionQueue = NULL;
@@ -55,6 +59,7 @@ QueueHandle_t xSectionQueue = NULL;
 // ---------------------------------------------------------------------------
 static void dispatch_turnout(int id, const char* payload, int payload_len)
 {
+    g_cmds_dispatched++;
     char buf[64] = {};
     int  len = (payload_len < (int)sizeof(buf) - 1) ? payload_len : (int)sizeof(buf) - 1;
     memcpy(buf, payload, len);
@@ -89,6 +94,7 @@ static void dispatch_turnout(int id, const char* payload, int payload_len)
 
 static void dispatch_section(int id, const char* payload, int payload_len)
 {
+    g_cmds_dispatched++;
     char buf[64] = {};
     int  len = (payload_len < (int)sizeof(buf) - 1) ? payload_len : (int)sizeof(buf) - 1;
     memcpy(buf, payload, len);
@@ -162,12 +168,14 @@ static void mqtt_event_handler(void* handler_args, esp_event_base_t base,
     switch ((esp_mqtt_event_id_t)event_id) {
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT connected");
+        s_mqtt_connected = true;
         esp_mqtt_client_subscribe(client, "train/#", 0);
         ESP_LOGI(TAG, "subscribed to train/#");
         break;
 
     case MQTT_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "MQTT disconnected");
+        s_mqtt_connected = false;
         break;
 
     case MQTT_EVENT_DATA:
@@ -181,6 +189,43 @@ static void mqtt_event_handler(void* handler_args, esp_event_base_t base,
 
     default:
         break;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Heartbeat task — publishes alive message every 10 s
+// ---------------------------------------------------------------------------
+static void heartbeat_task(void* /*arg*/)
+{
+    char payload[256];
+    for (;;) {
+        if (s_mqtt_connected) {
+            uint32_t uptime_s = xTaskGetTickCount() * portTICK_PERIOD_MS / 1000;
+
+            // Build scan array e.g. [32,34,56]
+            char scan_buf[64] = "[";
+            for (int i = 0; i < *g_scan_count; i++) {
+                char tmp[8];
+                snprintf(tmp, sizeof(tmp), "%s%d", i ? "," : "", g_scan_addrs[i]);
+                strncat(scan_buf, tmp, sizeof(scan_buf) - strlen(scan_buf) - 1);
+            }
+            strncat(scan_buf, "]", sizeof(scan_buf) - strlen(scan_buf) - 1);
+
+            snprintf(payload, sizeof(payload),
+                     "{\"status\":\"alive\",\"uptime\":%lu,\"cmds\":%lu,\"i2c_mask\":%u,\"i2c_err\":%lu,\"scan\":%s}",
+                     (unsigned long)uptime_s,
+                     (unsigned long)g_cmds_dispatched,
+                     (unsigned)g_i2c_ok_mask,
+                     (unsigned long)g_i2c_errors,
+                     scan_buf);
+            esp_mqtt_client_publish(mqtt_client, "train/status", payload, 0, 0, 0);
+            ESP_LOGI(TAG, "heartbeat: uptime=%lu cmds=%lu i2c_mask=0x%02X i2c_err=%lu",
+                     (unsigned long)uptime_s, (unsigned long)g_cmds_dispatched,
+                     (unsigned)g_i2c_ok_mask, (unsigned long)g_i2c_errors);
+            vTaskDelay(pdMS_TO_TICKS(10000));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
     }
 }
 
@@ -237,4 +282,5 @@ void app_main(void)
     // FreeRTOS tasks
     xTaskCreate(turnout_control_task, "pcf_task",    4096, xPcfQueue,     14, NULL);
     xTaskCreate(motor_l298n_task,     "motor_task",  4096, xSectionQueue, 13, NULL);
+    xTaskCreate(heartbeat_task,       "heartbeat",   2048, NULL,           5, NULL);
 }

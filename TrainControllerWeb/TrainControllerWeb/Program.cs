@@ -8,6 +8,7 @@ builder.Services.AddRazorComponents()
 
 builder.Services.AddSingleton<RabbitMqService>();
 builder.Services.AddSingleton<TrainCommandService>();
+builder.Services.AddSingleton<Esp32StatusService>();
 
 var app = builder.Build();
 
@@ -27,5 +28,12 @@ app.MapRazorComponents<App>()
 // Connect to RabbitMQ before accepting requests
 var rabbit = app.Services.GetRequiredService<RabbitMqService>();
 await rabbit.InitializeAsync();
+
+var esp32Status = app.Services.GetRequiredService<Esp32StatusService>();
+await rabbit.StartConsumerAsync("train.status", body =>
+{
+    esp32Status.RecordHeartbeat(body);
+    return Task.CompletedTask;
+});
 
 app.Run();

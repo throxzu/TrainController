@@ -34,4 +34,11 @@ typedef struct {
 // Task entry point. pvQueue must be a QueueHandle_t for PcfCmd_t messages.
 void turnout_control_task(void* pvQueue);
 
+// Bitmask of expanders that responded on I2C at startup (set by turnout_control_task).
+extern uint8_t g_i2c_ok_mask;
+
+// Full bus scan results.
+extern uint8_t* g_scan_addrs;
+extern int*     g_scan_count;
+
 #endif // TURNOUT_CONTROL_H

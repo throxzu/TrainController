@@ -2,6 +2,8 @@
 @rendermode InteractiveServer
 @inject TrainCommandService TrainCommands
 @inject RabbitMqService RabbitMq
+@inject Esp32StatusService Esp32Status
+@implements IDisposable
 
 <PageTitle>Train Controller</PageTitle>
 
@@ -9,13 +11,43 @@
     <h1 class="mb-0">Train Controller</h1>
     @if (RabbitMq.IsConnected)
     {
-        <span class="badge bg-success">Connected</span>
+        <span class="badge bg-success">RabbitMQ</span>
     }
     else
     {
-        <span class="badge bg-danger">Disconnected</span>
+        <span class="badge bg-danger">RabbitMQ Disconnected</span>
+    }
+    @if (Esp32Status.IsAlive)
+    {
+        <span class="badge bg-success">ESP32 Alive</span>
+    }
+    else
+    {
+        <span class="badge bg-danger">ESP32 Offline</span>
+    }
+    @if (Esp32Status.LastSeen.HasValue)
+    {
+        <span class="text-muted small">last seen @((DateTime.UtcNow - Esp32Status.LastSeen.Value).TotalSeconds.ToString("0"))s ago</span>
     }
 </div>
+
+@if (Esp32Status.IsAlive)
+{
+    <div class="d-flex gap-3 mb-3 p-2 border rounded small font-monospace">
+        <span>uptime: @Esp32Status.UptimeSeconds s</span>
+        <span>cmds received: @Esp32Status.CmdsDispatched</span>
+        <span class="@(Esp32Status.I2cFoundCount == 7 ? "text-success" : "text-danger")">
+            I2C expanders: @Esp32Status.I2cFoundCount/7
+        </span>
+        <span class="@(Esp32Status.I2cErrors == 0 ? "text-success" : "text-danger")">
+            I2C errors: @Esp32Status.I2cErrors
+        </span>
+        @if (Esp32Status.I2cScanAddrs.Length > 0)
+        {
+            <span>bus scan: @string.Join(", ", Esp32Status.I2cScanAddrs.Select(a => $"0x{a:X2}"))</span>
+        }
+    </div>
+}
 
 @if (!RabbitMq.IsConnected)
 {
@@ -77,6 +109,16 @@
     private readonly int[]    sectionSpeeds     = new int[14];
     private readonly string[] sectionDirections = Enumerable.Repeat("forward", 14).ToArray();
     private readonly string[] turnoutPositions  = Enumerable.Repeat("straight", 7).ToArray();
+
+    private Timer? _statusTimer;
+
+    protected override void OnInitialized()
+    {
+        _statusTimer = new Timer(_ => InvokeAsync(StateHasChanged), null,
+            TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    public void Dispose() => _statusTimer?.Dispose();
 
     private static int ParseInt(object? value) =>
         int.TryParse(value?.ToString(), out var n) ? n : 0;

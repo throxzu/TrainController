@@ -64,20 +64,20 @@ typedef struct {
 
 static const SectionConfig_t SECTION_CONFIG[NUM_SECTIONS] = {
 //   enablePin      ledcCh              ledcMode                dirAddr  fwd  rev
-    {GPIO_NUM_32,  LEDC_CHANNEL_0,  LEDC_HIGH_SPEED_MODE,     0x22,    0,   1},  // section  1
-    {GPIO_NUM_33,  LEDC_CHANNEL_1,  LEDC_HIGH_SPEED_MODE,     0x22,    2,   3},  // section  2  NOTE: GPIO33 conflict — see above
-    {GPIO_NUM_25,  LEDC_CHANNEL_2,  LEDC_HIGH_SPEED_MODE,     0x22,    4,   5},  // section  3
-    {GPIO_NUM_26,  LEDC_CHANNEL_3,  LEDC_HIGH_SPEED_MODE,     0x22,    6,   7},  // section  4
-    {GPIO_NUM_27,  LEDC_CHANNEL_4,  LEDC_HIGH_SPEED_MODE,     0x23,    0,   1},  // section  5
-    {GPIO_NUM_14,  LEDC_CHANNEL_5,  LEDC_HIGH_SPEED_MODE,     0x23,    2,   3},  // section  6
-    {GPIO_NUM_12,  LEDC_CHANNEL_6,  LEDC_HIGH_SPEED_MODE,     0x23,    4,   5},  // section  7
-    {GPIO_NUM_13,  LEDC_CHANNEL_7,  LEDC_HIGH_SPEED_MODE,     0x23,    6,   7},  // section  8
+    {GPIO_NUM_32,  LEDC_CHANNEL_0,  LEDC_HIGH_SPEED_MODE,     0x26,    0,   1},  // section  1
+    {GPIO_NUM_33,  LEDC_CHANNEL_1,  LEDC_HIGH_SPEED_MODE,     0x26,    2,   3},  // section  2
+    {GPIO_NUM_25,  LEDC_CHANNEL_2,  LEDC_HIGH_SPEED_MODE,     0x26,    4,   5},  // section  3
+    {GPIO_NUM_26,  LEDC_CHANNEL_3,  LEDC_HIGH_SPEED_MODE,     0x26,    6,   7},  // section  4
+    {GPIO_NUM_27,  LEDC_CHANNEL_4,  LEDC_HIGH_SPEED_MODE,     0x25,    0,   1},  // section  5
+    {GPIO_NUM_14,  LEDC_CHANNEL_5,  LEDC_HIGH_SPEED_MODE,     0x25,    2,   3},  // section  6
+    {GPIO_NUM_16,  LEDC_CHANNEL_6,  LEDC_HIGH_SPEED_MODE,     0x25,    4,   5},  // section  7
+    {GPIO_NUM_13,  LEDC_CHANNEL_7,  LEDC_HIGH_SPEED_MODE,     0x25,    6,   7},  // section  8
     {GPIO_NUM_23,  LEDC_CHANNEL_0,  LEDC_LOW_SPEED_MODE,      0x24,    0,   1},  // section  9
     {GPIO_NUM_19,  LEDC_CHANNEL_1,  LEDC_LOW_SPEED_MODE,      0x24,    2,   3},  // section 10
-    {GPIO_NUM_18,  LEDC_CHANNEL_2,  LEDC_LOW_SPEED_MODE,      0x24,    4,   5},  // section 11
-    {GPIO_NUM_15,  LEDC_CHANNEL_3,  LEDC_LOW_SPEED_MODE,      0x24,    6,   7},  // section 12
-    {GPIO_NUM_5,   LEDC_CHANNEL_4,  LEDC_LOW_SPEED_MODE,      0x25,    0,   1},  // section 13
-    {GPIO_NUM_4,   LEDC_CHANNEL_5,  LEDC_LOW_SPEED_MODE,      0x25,    2,   3},  // section 14
+    {GPIO_NUM_17,  LEDC_CHANNEL_2,  LEDC_LOW_SPEED_MODE,      0x24,    4,   5},  // section 11
+    {GPIO_NUM_4,   LEDC_CHANNEL_3,  LEDC_LOW_SPEED_MODE,      0x24,    6,   7},  // section 12
+    {GPIO_NUM_18,  LEDC_CHANNEL_4,  LEDC_LOW_SPEED_MODE,      0x25,    0,   1},  // section 13
+    {GPIO_NUM_15,  LEDC_CHANNEL_5,  LEDC_LOW_SPEED_MODE,      0x25,    2,   3},  // section 14
 };
 
 // ---------------------------------------------------------------------------

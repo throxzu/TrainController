@@ -54,6 +54,10 @@ uint8_t PCF8574::read() {
  * @param [in] bit The input pin of the device to read.  Values are 0-7.
  * @return True if the pin is high, false otherwise.  Undefined if there is no signal on the pin.
  */
+bool PCF8574::ping() {
+	return i2c->slavePresent(i2c->getAddress());
+}
+
 bool PCF8574::readBit(uint8_t bit) {
 	if (bit > 7) return false;
 	uint8_t value = read();

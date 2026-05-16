@@ -22,6 +22,8 @@ static const char* LOG_TAG = "I2C";
 
 static bool driverInstalled = false;
 static bool debug = false;
+
+uint32_t g_i2c_errors = 0;
 /**
  * @brief Create an instance of an %I2C object.
  * @return N/A.
@@ -73,6 +75,7 @@ void I2C::endTransaction() {
 
 	errRc = ::i2c_master_cmd_begin(m_portNum, m_cmd, 1000 / portTICK_PERIOD_MS);
 	if (errRc != ESP_OK) {
+		g_i2c_errors++;
 	 	if (errRc != ESP_ERR_TIMEOUT)
 		{
 			ESP_LOGE(LOG_TAG, "i2c_master_cmd_begin: rc=%d %s", errRc, esp_err_to_name(errRc));
@@ -102,35 +105,33 @@ uint8_t I2C::getAddress() const {
  * @return N/A.
  */
 void I2C::init(uint8_t address, gpio_num_t sdaPin, gpio_num_t sclPin, uint32_t clockSpeed, i2c_port_t portNum, bool pullup) {
-//	ESP_LOGD(LOG_TAG, ">> I2c::init.  address=%d, sda=%d, scl=%d, clockSpeed=%d, portNum=%d", address, sdaPin, sclPin, clockSpeed, portNum);
 	assert(portNum < I2C_NUM_MAX);
 	m_portNum = portNum;
 	m_sdaPin  = sdaPin;
 	m_sclPin  = sclPin;
 	m_address = address;
 
-	i2c_config_t conf;
+	// Configure hardware and install driver only once — repeated i2c_param_config
+	// calls reset the I2C control register and break subsequent transactions.
+	if (driverInstalled) return;
+
+	i2c_config_t conf = {};   // zero-init required — clk_flags must be 0 in ESP-IDF v5.x
 	conf.mode             = I2C_MODE_MASTER;
 	conf.sda_io_num       = sdaPin;
 	conf.scl_io_num       = sclPin;
 	conf.sda_pullup_en    = pullup ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE;
 	conf.scl_pullup_en    = pullup ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE;
-	conf.master.clk_speed =  clockSpeed;
-	esp_err_t errTO= ::i2c_set_timeout(m_portNum,19); //mod ci
-    if (errTO != ESP_OK) {
-		ESP_LOGE(LOG_TAG, "i2c_param_config: rc=%d %s", errTO, esp_err_to_name(errTO));
-	}
+	conf.master.clk_speed = clockSpeed;
+
 	esp_err_t errRc = ::i2c_param_config(m_portNum, &conf);
 	if (errRc != ESP_OK) {
 		ESP_LOGE(LOG_TAG, "i2c_param_config: rc=%d %s", errRc, esp_err_to_name(errRc));
 	}
-	if (!driverInstalled) {
-		errRc = ::i2c_driver_install(m_portNum, I2C_MODE_MASTER, 0, 0, 0);
-		if (errRc != ESP_OK) {
-			ESP_LOGE(LOG_TAG, "i2c_driver_install: rc=%d %s", errRc, esp_err_to_name(errRc));
-		}
-		driverInstalled = true;
+	errRc = ::i2c_driver_install(m_portNum, I2C_MODE_MASTER, 0, 0, 0);
+	if (errRc != ESP_OK) {
+		ESP_LOGE(LOG_TAG, "i2c_driver_install: rc=%d %s", errRc, esp_err_to_name(errRc));
 	}
+	driverInstalled = true;
 
 } // init
 

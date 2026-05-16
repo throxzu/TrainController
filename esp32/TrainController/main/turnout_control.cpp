@@ -8,6 +8,15 @@ static const char* TAG = "PCF";
 // One PCF8574 object per expander, indexed by (address - EXPANDER_BASE_ADDR)
 static PCF8574* expanders[NUM_EXPANDERS];
 
+// Bitmask of which expanders responded on I2C at startup (bit 0 = 0x20, bit 6 = 0x26)
+uint8_t g_i2c_ok_mask = 0;
+
+// Full I2C bus scan results (addresses of all responding devices)
+static uint8_t s_scan_addrs[16];
+static int     s_scan_count = 0;
+uint8_t* g_scan_addrs = s_scan_addrs;
+int*     g_scan_count = &s_scan_count;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -94,14 +103,34 @@ void turnout_control_task(void* pvQueue)
     }
     QueueHandle_t queue = (QueueHandle_t)pvQueue;
 
-    // Initialise all expanders. The I2C driver is installed on the first
-    // init() call; subsequent calls reuse it (see I2C.cpp driverInstalled flag).
+    // Install I2C driver via first expander (init() is a no-op for i > 0 now)
     for (int i = 0; i < NUM_EXPANDERS; i++) {
         expanders[i] = new PCF8574(EXPANDER_BASE_ADDR + i);
         expanders[i]->init(TRAIN_I2C_SDA, TRAIN_I2C_SCL);
-        ESP_LOGI(TAG, "expander 0x%02X initialised", EXPANDER_BASE_ADDR + i);
     }
+
+    // Full bus scan BEFORE pinging specific addresses — avoids failed-ACK
+    // transactions corrupting the bus state before the scan runs
+    {
+        I2C scanner;
+        for (uint8_t addr = 0x08; addr < 0x78 && s_scan_count < 16; addr++) {
+            if (scanner.slavePresent(addr)) {
+                s_scan_addrs[s_scan_count++] = addr;
+                ESP_LOGI(TAG, "I2C scan: device at 0x%02X", addr);
+            }
+        }
+        ESP_LOGI(TAG, "I2C scan complete: %d device(s) found", s_scan_count);
+    }
+
+    // Ping expected expander addresses
+    for (int i = 0; i < NUM_EXPANDERS; i++) {
+        bool found = expanders[i]->ping();
+        if (found) g_i2c_ok_mask |= (1 << i);
+        ESP_LOGI(TAG, "expander 0x%02X %s", EXPANDER_BASE_ADDR + i, found ? "OK" : "NOT FOUND");
+    }
+
     all_relays_off();
+
     ESP_LOGI(TAG, "PCF8574 task ready");
 
     PcfCmd_t cmd;

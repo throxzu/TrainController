@@ -27,6 +27,7 @@ public:
 	void init(gpio_num_t sdaPin = I2C::DEFAULT_SDA_PIN, gpio_num_t clkPin = I2C::DEFAULT_CLK_PIN);
 	uint8_t read();
 	bool readBit(uint8_t bit);
+	bool ping();
 	void setInvert(bool value);
 	void write(uint8_t value);
 	void writeBit(uint8_t bit, bool value);
