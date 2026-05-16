@@ -1,0 +1,38 @@
+Rabbit MQ runs on http://localhost:15672
+
+User:     guest
+Password: guest
+
+
+
+C# code use "Application 1"
+
+Json types
+
+{"control":"speed","i2cAddr": 33,"pwmPin": 1,"pwmValue":120,"in1Pin": 1,"in1PinValue": false,"in2Pin": 2,"in2PinValue": true}
+
+
+Pins at 5.53 in video.
+
+
+
+
+
+
+
+Wireing
+
+Motor 1 = D32
+Motor 2 = D33
+Motor 3 = D25
+Motor 4 = D26
+Motor 5 = D27
+Motor 6 = D14
+Motor 7 = D12
+Motor 8 = D13
+Motor 9 = D23
+Motor 10 = D19
+Motor 11 = D18
+Motor 12 = D15
+Motor 13 = D5
+Motor 14 = D4

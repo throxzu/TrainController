@@ -1,0 +1,107 @@
+@page "/"
+@rendermode InteractiveServer
+@inject TrainCommandService TrainCommands
+@inject RabbitMqService RabbitMq
+
+<PageTitle>Train Controller</PageTitle>
+
+<div class="d-flex align-items-center gap-2 mb-3">
+    <h1 class="mb-0">Train Controller</h1>
+    @if (RabbitMq.IsConnected)
+    {
+        <span class="badge bg-success">Connected</span>
+    }
+    else
+    {
+        <span class="badge bg-danger">Disconnected</span>
+    }
+</div>
+
+@if (!RabbitMq.IsConnected)
+{
+    <div class="alert alert-danger">
+        Cannot reach RabbitMQ. Make sure it is running and the MQTT plugin is enabled.
+    </div>
+}
+
+<h4>Sections</h4>
+<div class="row g-2 mb-4">
+    @for (int i = 0; i < 14; i++)
+    {
+        int idx = i;
+        <div class="col-6 col-sm-4 col-md-3 col-xl-2">
+            <div class="card h-100">
+                <div class="card-body p-2">
+                    <div class="fw-semibold mb-1">Section @(idx + 1)</div>
+                    <div class="small text-muted mb-1">Speed: @sectionSpeeds[idx]%</div>
+                    <input type="range" class="form-range mb-2" min="0" max="100"
+                           value="@sectionSpeeds[idx]"
+                           @oninput="@(e  => sectionSpeeds[idx] = ParseInt(e.Value))"
+                           @onchange="@(async e => await SendSection(idx + 1, ParseInt(e.Value), sectionDirections[idx]))" />
+                    <div class="btn-group w-100 btn-group-sm">
+                        <button class="btn @(sectionDirections[idx] == "forward" ? "btn-success" : "btn-outline-success")"
+                                @onclick="@(async () => await SetDirection(idx, "forward"))">Fwd</button>
+                        <button class="btn btn-outline-secondary"
+                                @onclick="@(async () => await StopSection(idx))">Stop</button>
+                        <button class="btn @(sectionDirections[idx] == "reverse" ? "btn-danger" : "btn-outline-danger")"
+                                @onclick="@(async () => await SetDirection(idx, "reverse"))">Rev</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<h4>Turnouts</h4>
+<div class="row g-2">
+    @for (int i = 0; i < 7; i++)
+    {
+        int idx = i;
+        <div class="col-6 col-sm-4 col-md-3 col-lg-auto">
+            <div class="card h-100">
+                <div class="card-body p-2 text-center">
+                    <div class="fw-semibold mb-2">Turnout @(idx + 1)</div>
+                    <div class="d-grid gap-1">
+                        <button class="btn btn-sm @(turnoutPositions[idx] == "straight" ? "btn-primary" : "btn-outline-primary")"
+                                @onclick="@(async () => await SetTurnout(idx, "straight"))">Straight</button>
+                        <button class="btn btn-sm @(turnoutPositions[idx] == "diverge" ? "btn-warning" : "btn-outline-warning")"
+                                @onclick="@(async () => await SetTurnout(idx, "diverge"))">Diverge</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly int[]    sectionSpeeds     = new int[14];
+    private readonly string[] sectionDirections = Enumerable.Repeat("forward", 14).ToArray();
+    private readonly string[] turnoutPositions  = Enumerable.Repeat("straight", 7).ToArray();
+
+    private static int ParseInt(object? value) =>
+        int.TryParse(value?.ToString(), out var n) ? n : 0;
+
+    private async Task SendSection(int id, int speed, string direction)
+    {
+        sectionSpeeds[id - 1] = speed;
+        await TrainCommands.SetSection(id, speed, direction);
+    }
+
+    private async Task SetDirection(int idx, string direction)
+    {
+        sectionDirections[idx] = direction;
+        await TrainCommands.SetSection(idx + 1, sectionSpeeds[idx], direction);
+    }
+
+    private async Task StopSection(int idx)
+    {
+        sectionSpeeds[idx] = 0;
+        await TrainCommands.SetSection(idx + 1, 0, sectionDirections[idx]);
+    }
+
+    private async Task SetTurnout(int idx, string position)
+    {
+        turnoutPositions[idx] = position;
+        await TrainCommands.SetTurnout(idx + 1, position);
+    }
+}

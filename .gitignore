@@ -1,0 +1,11 @@
+# .NET build artifacts
+bin/
+obj/
+*.user
+.vs/
+
+# ESP-IDF — handled by esp32/TrainController/.gitignore
+# (build/, managed_components/, sdkconfig.old, *.log)
+
+# Claude local settings
+.claude/settings.local.json
