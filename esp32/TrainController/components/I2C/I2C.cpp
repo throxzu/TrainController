@@ -73,7 +73,7 @@ void I2C::endTransaction() {
 		ESP_LOGE(LOG_TAG, "i2c_master_stop: rc=%d %s", errRc, esp_err_to_name(errRc));
 	}
 
-	errRc = ::i2c_master_cmd_begin(m_portNum, m_cmd, 1000 / portTICK_PERIOD_MS);
+	errRc = ::i2c_master_cmd_begin(m_portNum, m_cmd, pdMS_TO_TICKS(100));
 	if (errRc != ESP_OK) {
 		g_i2c_errors++;
 	 	if (errRc != ESP_ERR_TIMEOUT)
@@ -181,7 +181,11 @@ void I2C::read(uint8_t* byte, bool ack) {
 			ESP_LOGE(LOG_TAG, "i2c_master_write_byte: rc=%d %s", errRc, esp_err_to_name(errRc));
 		}
 	}
-	ESP_ERROR_CHECK(::i2c_master_read_byte(m_cmd, byte, ack?I2C_MASTER_ACK:I2C_MASTER_NACK));
+	esp_err_t errRc = ::i2c_master_read_byte(m_cmd, byte, ack ? I2C_MASTER_ACK : I2C_MASTER_NACK);
+	if (errRc != ESP_OK) {
+		ESP_LOGE(LOG_TAG, "i2c_master_read_byte: rc=%d %s", errRc, esp_err_to_name(errRc));
+		*byte = 0xFF;  // safe default — all HIGH = relays off
+	}
 } // readByte
 
 

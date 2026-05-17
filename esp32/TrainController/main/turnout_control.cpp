@@ -63,7 +63,18 @@ static void handle_turnout(const PcfCmd_t& cmd)
     ESP_LOGI(TAG, "turnout %d → %-8s  [expander 0x%02X  pin %d  pulse %d ms]",
              id, posLabel, cfg.i2cAddr, activePin, SOLENOID_PULSE_MS);
 
-    exp->writeBit(activePin, false);                    // energise coil (relay ON)
+    // Energise — retry up to 3 times if relay doesn't latch on first write
+    bool energized = false;
+    for (int attempt = 0; attempt < 3 && !energized; attempt++) {
+        exp->writeBit(activePin, false);
+        energized = !(exp->read() & (1 << activePin));
+        if (!energized)
+            ESP_LOGW(TAG, "  turnout %d: pin %d still HIGH after write (attempt %d) — retrying",
+                     id, activePin, attempt + 1);
+    }
+    if (!energized)
+        ESP_LOGW(TAG, "  turnout %d: relay may not have latched — pulsing anyway", id);
+
     vTaskDelay(pdMS_TO_TICKS(SOLENOID_PULSE_MS));
     exp->writeBit(activePin, true);                     // de-energise (relay OFF)
 }

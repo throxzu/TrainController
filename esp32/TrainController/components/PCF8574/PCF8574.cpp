@@ -42,7 +42,7 @@ PCF8574::~PCF8574() {
 uint8_t PCF8574::read() {
 	uint8_t value;
 	i2c->beginTransaction();
-	i2c->read(&value,true);
+	i2c->read(&value, false);  // ack=false → NACK last byte (required by I2C spec for single-byte read)
 	i2c->endTransaction();
 	return value;
 } // read

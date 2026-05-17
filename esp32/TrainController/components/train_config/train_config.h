@@ -22,7 +22,7 @@
 // Pulse duration for turnout coils — long enough to throw, short enough
 // not to burn. Coils are always returned to de-energized state after this.
 // ---------------------------------------------------------------------------
-#define SOLENOID_PULSE_MS  200
+#define SOLENOID_PULSE_MS  30
 
 // ---------------------------------------------------------------------------
 // Layout counts
@@ -76,8 +76,8 @@ static const SectionConfig_t SECTION_CONFIG[NUM_SECTIONS] = {
     {GPIO_NUM_19,  LEDC_CHANNEL_1,  LEDC_LOW_SPEED_MODE,      0x24,    2,   3},  // section 10
     {GPIO_NUM_17,  LEDC_CHANNEL_2,  LEDC_LOW_SPEED_MODE,      0x24,    4,   5},  // section 11
     {GPIO_NUM_4,   LEDC_CHANNEL_3,  LEDC_LOW_SPEED_MODE,      0x24,    6,   7},  // section 12
-    {GPIO_NUM_18,  LEDC_CHANNEL_4,  LEDC_LOW_SPEED_MODE,      0x25,    0,   1},  // section 13
-    {GPIO_NUM_15,  LEDC_CHANNEL_5,  LEDC_LOW_SPEED_MODE,      0x25,    2,   3},  // section 14
+    {GPIO_NUM_18,  LEDC_CHANNEL_4,  LEDC_LOW_SPEED_MODE,      0x23,    0,   1},  // section 13
+    {GPIO_NUM_15,  LEDC_CHANNEL_5,  LEDC_LOW_SPEED_MODE,      0x23,    2,   3},  // section 14
 };
 
 // ---------------------------------------------------------------------------
@@ -100,8 +100,8 @@ typedef struct {
 
 static const TurnoutConfig_t TURNOUT_CONFIG[NUM_TURNOUTS] = {
 //   addr   straight  diverge
-    {0x20,  0,        1      },  // turnout 1  TODO: verify
-    {0x20,  2,        3      },  // turnout 2  TODO: verify
+    {0x23,  4,        5      },  // turnout 1
+    {0x23,  6,        7      },  // turnout 2
     {0x20,  4,        5      },  // turnout 3  TODO: verify
     {0x20,  6,        7      },  // turnout 4  TODO: verify
     {0x21,  0,        1      },  // turnout 5  TODO: verify
