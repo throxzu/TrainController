@@ -14,8 +14,8 @@ static const uint8_t SENSOR_PINS[14] = {
 // HIGH = track clear    (PCF8574 internal pull-up holds pin HIGH, ESP32 reads 1)
 // ---------------------------------------------------------------------------
 static const uint8_t OUTPUT_PINS[14] = {
-    22, 23, 24, 25, 26, 27, 28, 29,   // sections 1–8  → 0x20 pins 0–7
-    30, 31, 32, 33, 34, 35            // sections 9–14 → 0x21 pins 0–5
+    52, 50, 48, 46, 44, 42, 40, 38,   // sections 1–8  → 0x20 pins 0–7
+    36, 34, 32, 30, 28, 26            // sections 9–14 → 0x21 pins 0–5
 };
 
 // ---------------------------------------------------------------------------
