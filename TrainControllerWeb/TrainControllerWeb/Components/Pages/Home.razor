@@ -86,13 +86,13 @@
 
 <h4>Turnouts</h4>
 <div class="row g-2">
-    @for (int i = 0; i < 7; i++)
+    @for (int i = 0; i < 6; i++)
     {
         int idx = i;
         <div class="col-6 col-sm-4 col-md-3 col-lg-auto">
             <div class="card h-100">
                 <div class="card-body p-2 text-center">
-                    <div class="fw-semibold mb-2">Turnout @(idx + 1)</div>
+                    <div class="fw-semibold mb-2">@(idx == 5 ? "X" : $"Turnout {idx + 1}")</div>
                     <div class="d-grid gap-1">
                         <button class="btn btn-sm @(turnoutPositions[idx] == "straight" ? "btn-primary" : "btn-outline-primary")"
                                 @onclick="@(async () => await SetTurnout(idx, "straight"))">Straight</button>
@@ -105,10 +105,13 @@
     }
 </div>
 
+<h4 class="mt-4">Track Layout</h4>
+<img src="track_layout.png" alt="Track Layout" style="width:579px !important; height:auto !important; display:block;" />
+
 @code {
     private readonly int[]    sectionSpeeds     = new int[14];
     private readonly string[] sectionDirections = Enumerable.Repeat("forward", 14).ToArray();
-    private readonly string[] turnoutPositions  = Enumerable.Repeat("straight", 7).ToArray();
+    private readonly string[] turnoutPositions  = Enumerable.Repeat("straight", 6).ToArray();
 
     private Timer? _statusTimer;
 

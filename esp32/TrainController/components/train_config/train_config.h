@@ -28,7 +28,7 @@
 // Layout counts
 // ---------------------------------------------------------------------------
 #define NUM_SECTIONS  14
-#define NUM_TURNOUTS   7
+#define NUM_TURNOUTS   6
 
 // ---------------------------------------------------------------------------
 // LEDC (PWM) shared configuration for all section speed channels
@@ -100,13 +100,12 @@ typedef struct {
 
 static const TurnoutConfig_t TURNOUT_CONFIG[NUM_TURNOUTS] = {
 //   addr   straight  diverge
-    {0x23,  4,        5      },  // turnout 1
-    {0x23,  6,        7      },  // turnout 2
-    {0x20,  4,        5      },  // turnout 3  TODO: verify
-    {0x20,  6,        7      },  // turnout 4  TODO: verify
-    {0x21,  0,        1      },  // turnout 5  TODO: verify
-    {0x21,  2,        3      },  // turnout 6  TODO: verify
-    {0x21,  4,        5      },  // turnout 7  TODO: verify
+    {0x22,  6,        7      },  // turnout 1
+    {0x22,  4,        5      },  // turnout 2
+    {0x22,  2,        3      },  // turnout 3
+    {0x22,  0,        1      },  // turnout 4
+    {0x23,  6,        7      },  // turnout 5
+    {0x23,  4,        5      },  // turnout 6 (X)
 };
 
 #endif // TRAIN_CONFIG_H
