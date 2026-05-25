@@ -9,6 +9,7 @@ builder.Services.AddRazorComponents()
 builder.Services.AddSingleton<RabbitMqService>();
 builder.Services.AddSingleton<TrainCommandService>();
 builder.Services.AddSingleton<Esp32StatusService>();
+builder.Services.AddSingleton<DetectorStatusService>();
 
 var app = builder.Build();
 
@@ -33,6 +34,18 @@ var esp32Status = app.Services.GetRequiredService<Esp32StatusService>();
 await rabbit.StartConsumerAsync("train.status", body =>
 {
     esp32Status.RecordHeartbeat(body);
+    return Task.CompletedTask;
+});
+
+var detectorStatus = app.Services.GetRequiredService<DetectorStatusService>();
+await rabbit.StartConsumerAsync("train.detector.status", body =>
+{
+    detectorStatus.RecordHeartbeat(body);
+    return Task.CompletedTask;
+});
+await rabbit.StartConsumerAsync("train.detection.#", (routingKey, body) =>
+{
+    detectorStatus.RecordDetection(routingKey, body);
     return Task.CompletedTask;
 });
 

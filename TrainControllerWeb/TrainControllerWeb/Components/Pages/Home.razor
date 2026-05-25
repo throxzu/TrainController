@@ -3,6 +3,7 @@
 @inject TrainCommandService TrainCommands
 @inject RabbitMqService RabbitMq
 @inject Esp32StatusService Esp32Status
+@inject DetectorStatusService DetectorStatus
 @implements IDisposable
 
 <PageTitle>Train Controller</PageTitle>
@@ -28,6 +29,19 @@
     @if (Esp32Status.LastSeen.HasValue)
     {
         <span class="text-muted small">last seen @((DateTime.UtcNow - Esp32Status.LastSeen.Value).TotalSeconds.ToString("0"))s ago</span>
+    }
+    @if (DetectorStatus.IsAlive)
+    {
+        <span class="badge bg-success">Detector Alive</span>
+        <span class="text-muted small">uptime: @DetectorStatus.UptimeSeconds s</span>
+    }
+    else
+    {
+        <span class="badge bg-danger">Detector Offline</span>
+    }
+    @if (DetectorStatus.LastSeen.HasValue)
+    {
+        <span class="text-muted small">last seen @((DateTime.UtcNow - DetectorStatus.LastSeen.Value).TotalSeconds.ToString("0"))s ago</span>
     }
 </div>
 
@@ -64,7 +78,11 @@
         <div class="col-6 col-sm-4 col-md-3 col-xl-2">
             <div class="card h-100">
                 <div class="card-body p-2">
-                    <div class="fw-semibold mb-1">Section @(idx + 1)</div>
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="fw-semibold">Section @(idx + 1)</span>
+                        @{ var state = DetectorStatus.GetState(idx); }
+                        <span class="badge @SectionStateCss(state)">@state</span>
+                    </div>
                     <div class="small text-muted mb-1">Speed: @sectionSpeeds[idx]%</div>
                     <input type="range" class="form-range mb-2" min="0" max="100"
                            value="@sectionSpeeds[idx]"
@@ -119,12 +137,27 @@
     {
         _statusTimer = new Timer(_ => InvokeAsync(StateHasChanged), null,
             TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+        DetectorStatus.OnDetectionChanged += OnDetectionUpdate;
     }
 
-    public void Dispose() => _statusTimer?.Dispose();
+    private void OnDetectionUpdate() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        DetectorStatus.OnDetectionChanged -= OnDetectionUpdate;
+        _statusTimer?.Dispose();
+    }
 
     private static int ParseInt(object? value) =>
         int.TryParse(value?.ToString(), out var n) ? n : 0;
+
+    private static string SectionStateCss(DetectorStatusService.SectionState state) => state switch
+    {
+        DetectorStatusService.SectionState.Entering  => "bg-warning text-dark",
+        DetectorStatusService.SectionState.Occupied  => "bg-danger",
+        DetectorStatusService.SectionState.Leaving   => "bg-info text-dark",
+        _                                            => "bg-secondary",
+    };
 
     private async Task SendSection(int id, int speed, string direction)
     {

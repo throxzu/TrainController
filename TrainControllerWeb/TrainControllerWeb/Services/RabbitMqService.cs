@@ -70,6 +70,11 @@ public sealed class RabbitMqService : IAsyncDisposable
 
     public async Task StartConsumerAsync(string routingKey, Func<string, Task> handler)
     {
+        await StartConsumerAsync(routingKey, (_, body) => handler(body));
+    }
+
+    public async Task StartConsumerAsync(string routingKey, Func<string, string, Task> handler)
+    {
         if (_consumerChannel is null) return;
 
         var q = await _consumerChannel.QueueDeclareAsync(
@@ -82,7 +87,7 @@ public sealed class RabbitMqService : IAsyncDisposable
         consumer.ReceivedAsync += async (_, ea) =>
         {
             var body = Encoding.UTF8.GetString(ea.Body.Span);
-            await handler(body);
+            await handler(ea.RoutingKey, body);
         };
 
         await _consumerChannel.BasicConsumeAsync(

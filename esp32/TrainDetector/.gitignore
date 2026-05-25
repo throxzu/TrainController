@@ -1,0 +1,15 @@
+# ESP-IDF build output
+build/
+sdkconfig.old
+
+# Component manager downloads (auto-restored by idf.py build)
+managed_components/
+
+# Logs
+*.log
+
+# VS Code local settings
+.vscode/settings.json
+
+# Claude local settings
+.claude/settings.local.json
