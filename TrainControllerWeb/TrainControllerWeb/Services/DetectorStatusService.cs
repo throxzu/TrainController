@@ -7,25 +7,55 @@ public sealed class DetectorStatusService
     private static readonly TimeSpan _timeout = TimeSpan.FromSeconds(30);
 
     private DateTime? _lastSeen;
-    private readonly bool[] _entry = new bool[14];
-    private readonly bool[] _exit  = new bool[14];
+    private readonly bool[] _occupied = new bool[14];
+
+    // Raw last-known state of each individual Hall sensor, kept separately from
+    // the latched occupancy above so the diagnostics table can show release
+    // edges and sensors that have never reported at all.
+    private readonly bool[]      _entryTriggered = new bool[14];
+    private readonly bool[]      _exitTriggered  = new bool[14];
+    private readonly DateTime?[] _entryUpdated   = new DateTime?[14];
+    private readonly DateTime?[] _exitUpdated    = new DateTime?[14];
 
     public DateTime? LastSeen      => _lastSeen;
     public bool      IsAlive       => _lastSeen.HasValue && DateTime.UtcNow - _lastSeen.Value < _timeout;
     public uint      UptimeSeconds { get; private set; }
 
-    public enum SectionState { Clear, Entering, Occupied, Leaving }
+    public enum SectionState { Clear, Occupied }
 
-    public SectionState GetState(int sectionIndex)
+    public SectionState GetState(int sectionIndex) =>
+        _occupied[sectionIndex] ? SectionState.Occupied : SectionState.Clear;
+
+    public readonly record struct SensorReading(
+        int Index, int Section, bool IsEntry, byte Addr, byte Pin,
+        bool Triggered, DateTime? LastUpdate)
     {
-        bool e = _entry[sectionIndex], x = _exit[sectionIndex];
-        return (e, x) switch
+        public bool   HasData => LastUpdate.HasValue;
+        public string Label   => $"S{Section} {(IsEntry ? "entry" : "exit")}";
+    }
+
+    // Wiring convention mirrored from the firmware's detect_config.h: sensors run
+    // sequentially, entry then exit per section, filling each PCF8574 pin 0->7
+    // before moving to the next I2C address.
+    public static int  SensorIndex(int section, bool isEntry) => (section - 1) * 2 + (isEntry ? 0 : 1);
+    public static byte SensorAddr(int index) => (byte)(0x20 + index / 8);
+    public static byte SensorPin(int index)  => (byte)(index % 8);
+
+    // All 28 sensors in physical wiring order (chip, then pin) — the order you
+    // want when tracing a wiring fault.
+    public IEnumerable<SensorReading> AllSensors()
+    {
+        for (int section = 1; section <= 14; section++)
         {
-            (true,  false) => SectionState.Entering,
-            (true,  true)  => SectionState.Occupied,
-            (false, true)  => SectionState.Leaving,
-            _              => SectionState.Clear,
-        };
+            foreach (var isEntry in new[] { true, false })
+            {
+                int i = SensorIndex(section, isEntry);
+                yield return new SensorReading(
+                    i, section, isEntry, SensorAddr(i), SensorPin(i),
+                    isEntry ? _entryTriggered[section - 1] : _exitTriggered[section - 1],
+                    isEntry ? _entryUpdated[section - 1]   : _exitUpdated[section - 1]);
+            }
+        }
     }
 
     public void RecordHeartbeat(string json)
@@ -59,8 +89,20 @@ public sealed class DetectorStatusService
         }
         catch { return; }
 
-        if (parts[3] == "entry")     _entry[section - 1] = triggered;
-        else if (parts[3] == "exit") _exit[section - 1]  = triggered;
+        // Record the raw sensor state first — including the release edge, which
+        // the occupancy latch below deliberately ignores.
+        if (parts[3] == "entry")
+        {
+            _entryTriggered[section - 1] = triggered;
+            _entryUpdated[section - 1]   = DateTime.UtcNow;
+            if (triggered) _occupied[section - 1] = true;
+        }
+        else if (parts[3] == "exit")
+        {
+            _exitTriggered[section - 1] = triggered;
+            _exitUpdated[section - 1]   = DateTime.UtcNow;
+            if (triggered) _occupied[section - 1] = false;
+        }
         else return;
 
         OnDetectionChanged?.Invoke();

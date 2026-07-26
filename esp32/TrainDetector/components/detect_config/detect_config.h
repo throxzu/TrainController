@@ -30,24 +30,30 @@ typedef struct {
 
 // ---------------------------------------------------------------------------
 // Section sensor mapping — fill in as hardware is wired.
-// Current test setup: section 1 entry only (0x20 pin 0), all others unwired.
+//
+// Wiring convention: sensors run sequentially, entry then exit per section,
+// filling each PCF8574 pin 0→7 before moving to the next I2C address.
+// Sensor index i = (section-1)*2 + (0 entry | 1 exit)
+//   addr = 0x20 + i/8,  pin = i%8
+// All 28 sensors are wired and enabled across four PCF8574s: 0x20, 0x21 and
+// 0x22 are fully populated; 0x23 uses only pins 0–3 (sections 13–14).
 // ---------------------------------------------------------------------------
 static const SectionSensors_t SECTION_SENSORS[NUM_SECTIONS] = {
 //             entry                    exit
-    {{0x20, 0}, {SENSOR_NOT_WIRED, 0}},   // section  1
-    {{SENSOR_NOT_WIRED, 0}, {SENSOR_NOT_WIRED, 0}},  // section  2
-    {{SENSOR_NOT_WIRED, 0}, {SENSOR_NOT_WIRED, 0}},  // section  3
-    {{SENSOR_NOT_WIRED, 0}, {SENSOR_NOT_WIRED, 0}},  // section  4
-    {{SENSOR_NOT_WIRED, 0}, {SENSOR_NOT_WIRED, 0}},  // section  5
-    {{SENSOR_NOT_WIRED, 0}, {SENSOR_NOT_WIRED, 0}},  // section  6
-    {{SENSOR_NOT_WIRED, 0}, {SENSOR_NOT_WIRED, 0}},  // section  7
-    {{SENSOR_NOT_WIRED, 0}, {SENSOR_NOT_WIRED, 0}},  // section  8
-    {{SENSOR_NOT_WIRED, 0}, {SENSOR_NOT_WIRED, 0}},  // section  9
-    {{SENSOR_NOT_WIRED, 0}, {SENSOR_NOT_WIRED, 0}},  // section 10
-    {{SENSOR_NOT_WIRED, 0}, {SENSOR_NOT_WIRED, 0}},  // section 11
-    {{SENSOR_NOT_WIRED, 0}, {SENSOR_NOT_WIRED, 0}},  // section 12
-    {{SENSOR_NOT_WIRED, 0}, {SENSOR_NOT_WIRED, 0}},  // section 13
-    {{SENSOR_NOT_WIRED, 0}, {SENSOR_NOT_WIRED, 0}},  // section 14
+    {{0x20, 0}, {0x20, 1}},                          // section  1
+    {{0x20, 2}, {0x20, 3}},                          // section  2
+    {{0x20, 4}, {0x20, 5}},                          // section  3
+    {{0x20, 6}, {0x20, 7}},                          // section  4
+    {{0x21, 0}, {0x21, 1}},                          // section  5
+    {{0x21, 2}, {0x21, 3}},                          // section  6
+    {{0x21, 4}, {0x21, 5}},                          // section  7
+    {{0x21, 6}, {0x21, 7}},                          // section  8
+    {{0x22, 0}, {0x22, 1}},                          // section  9
+    {{0x22, 2}, {0x22, 3}},                          // section 10
+    {{0x22, 4}, {0x22, 5}},                          // section 11
+    {{0x22, 6}, {0x22, 7}},                          // section 12
+    {{0x23, 0}, {0x23, 1}},                          // section 13
+    {{0x23, 2}, {0x23, 3}},                          // section 14
 };
 
 #define DETECT_POLL_MS  20

@@ -126,6 +126,64 @@
 <h4 class="mt-4">Track Layout</h4>
 <img src="track_layout.png" alt="Track Layout" style="width:579px !important; height:auto !important; display:block;" />
 
+@{
+    var sensors   = DetectorStatus.AllSensors().ToList();
+    var reporting = sensors.Count(s => s.HasData);
+    var active    = sensors.Count(s => s.HasData && s.Triggered);
+}
+
+<div class="d-flex align-items-center gap-2 mt-4 mb-2">
+    <h4 class="mb-0">Hall Sensors</h4>
+    <span class="badge bg-secondary">@reporting/@sensors.Count reporting</span>
+    <span class="badge @(active > 0 ? "bg-danger" : "bg-success")">@active triggered</span>
+</div>
+
+<div class="table-responsive mb-4">
+    <table class="table table-sm table-bordered align-middle small font-monospace mb-0"
+           style="max-width:760px;">
+        <thead class="table-light">
+            <tr>
+                <th>#</th>
+                <th>Chip</th>
+                <th>Pin</th>
+                <th>Sensor</th>
+                <th>State</th>
+                <th>Updated</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var s in sensors)
+            {
+                <tr class="@(s.Index % 8 == 0 && s.Index > 0 ? "border-top border-2 border-dark" : null)">
+                    <td class="text-muted">@s.Index</td>
+                    <td>0x@s.Addr.ToString("X2")</td>
+                    <td>@s.Pin</td>
+                    <td>@s.Label</td>
+                    <td>
+                        @if (!s.HasData)
+                        {
+                            <span class="badge bg-secondary">no data</span>
+                        }
+                        else if (s.Triggered)
+                        {
+                            <span class="badge bg-danger">triggered</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-success">clear</span>
+                        }
+                    </td>
+                    <td class="text-muted">
+                        @(s.LastUpdate.HasValue
+                            ? $"{(DateTime.UtcNow - s.LastUpdate.Value).TotalSeconds:0}s ago"
+                            : "—")
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
 @code {
     private readonly int[]    sectionSpeeds     = new int[14];
     private readonly string[] sectionDirections = Enumerable.Repeat("forward", 14).ToArray();
@@ -136,7 +194,7 @@
     protected override void OnInitialized()
     {
         _statusTimer = new Timer(_ => InvokeAsync(StateHasChanged), null,
-            TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+            TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
         DetectorStatus.OnDetectionChanged += OnDetectionUpdate;
     }
 
@@ -153,10 +211,8 @@
 
     private static string SectionStateCss(DetectorStatusService.SectionState state) => state switch
     {
-        DetectorStatusService.SectionState.Entering  => "bg-warning text-dark",
-        DetectorStatusService.SectionState.Occupied  => "bg-danger",
-        DetectorStatusService.SectionState.Leaving   => "bg-info text-dark",
-        _                                            => "bg-secondary",
+        DetectorStatusService.SectionState.Occupied => "bg-danger",
+        _                                           => "bg-secondary",
     };
 
     private async Task SendSection(int id, int speed, string direction)

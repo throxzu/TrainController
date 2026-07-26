@@ -68,6 +68,14 @@ static void detection_task(void* /*arg*/)
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(DETECT_POLL_MS));
 
+        // While the broker is unreachable, drop the baseline so that the first
+        // poll after (re)connecting republishes the current state of every
+        // wired sensor instead of waiting for the next physical change.
+        if (!s_mqtt_connected) {
+            initialised = false;
+            continue;
+        }
+
         // Read each wired chip once per cycle
         uint8_t chipBits[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
         for (int i = 0; i < 8; i++) {
