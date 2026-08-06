@@ -11,4 +11,20 @@ public sealed class TrainCommandService(RabbitMqService rabbit)
         rabbit.PublishAsync(
             $"train.section.{id}",
             $"{{\"speed\":{speed},\"direction\":\"{direction}\"}}");
+
+    public Task SetFan(int id, int speed) =>
+        rabbit.PublishAsync(
+            $"train.fan.{id}",
+            $"{{\"speed\":{speed}}}");
+
+    // Hands control back to the firmware's temperature thresholds.
+    public Task SetFanAuto(int id) =>
+        rabbit.PublishAsync(
+            $"train.fan.{id}",
+            "{\"mode\":\"auto\"}");
+
+    public Task SetLed(int id, bool on) =>
+        rabbit.PublishAsync(
+            $"train.led.{id}",
+            $"{{\"on\":{(on ? "true" : "false")}}}");
 }

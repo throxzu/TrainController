@@ -58,6 +58,46 @@ public sealed class DetectorStatusService
         }
     }
 
+    // train/detector/temp — {"celsius":23.4,"fan":0,"auto":true}
+    // or {"error":"no sensor","fan":0,"auto":true}
+    public double?   TemperatureC     { get; private set; }
+    public DateTime? TemperatureSeen  { get; private set; }
+    public string?   TemperatureError { get; private set; }
+
+    // Fan state as reported by the firmware — authoritative, since automatic
+    // control can change it without the UI having asked for anything.
+    public int  FanSpeed { get; private set; }
+    public bool FanAuto  { get; private set; } = true;
+
+    public void RecordTemperature(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("celsius", out var c))
+            {
+                TemperatureC     = c.GetDouble();
+                TemperatureError = null;
+            }
+            else if (root.TryGetProperty("error", out var e))
+            {
+                TemperatureC     = null;
+                TemperatureError = e.GetString();
+            }
+            else return;
+
+            if (root.TryGetProperty("fan",  out var f)) FanSpeed = f.GetInt32();
+            if (root.TryGetProperty("auto", out var a)) FanAuto  = a.GetBoolean();
+
+            TemperatureSeen = DateTime.UtcNow;
+        }
+        catch { return; }
+
+        OnDetectionChanged?.Invoke();
+    }
+
     public void RecordHeartbeat(string json)
     {
         _lastSeen = DateTime.UtcNow;

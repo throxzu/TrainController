@@ -43,6 +43,11 @@ await rabbit.StartConsumerAsync("train.detector.status", body =>
     detectorStatus.RecordHeartbeat(body);
     return Task.CompletedTask;
 });
+await rabbit.StartConsumerAsync("train.detector.temp", body =>
+{
+    detectorStatus.RecordTemperature(body);
+    return Task.CompletedTask;
+});
 await rabbit.StartConsumerAsync("train.detection.#", (routingKey, body) =>
 {
     detectorStatus.RecordDetection(routingKey, body);

@@ -184,7 +184,101 @@
     </table>
 </div>
 
+<h4 class="mt-4">Lights</h4>
+<div class="card mb-4" style="max-width:320px;">
+    <div class="card-body p-3 d-flex align-items-center justify-content-between">
+        <div>
+            <div class="fw-semibold">LED 1</div>
+            <div class="small text-muted font-monospace">0x23 pin 4</div>
+        </div>
+        <div class="form-check form-switch fs-3 mb-0">
+            <input class="form-check-input" type="checkbox" role="switch"
+                   checked="@ledOn"
+                   @onchange="@(async e => await SetLed(1, e.Value is bool b && b))" />
+        </div>
+    </div>
+</div>
+
+<h4 class="mt-4">Cooling</h4>
+<div class="card mb-2" style="max-width:420px;">
+    <div class="card-body p-3 d-flex justify-content-between align-items-center">
+        <div>
+            <span class="fw-semibold">Temperature</span>
+            <span class="small text-muted font-monospace ms-2">KY-013 &middot; GPIO34</span>
+            @if (DetectorStatus.TemperatureSeen.HasValue)
+            {
+                <div class="small text-muted">
+                    updated @((DateTime.UtcNow - DetectorStatus.TemperatureSeen.Value).TotalSeconds.ToString("0"))s ago
+                </div>
+            }
+        </div>
+        @if (DetectorStatus.TemperatureC is double tc)
+        {
+            <span class="badge fs-5 @TempCss(tc)">@tc.ToString("0.0") &deg;C</span>
+        }
+        else if (DetectorStatus.TemperatureError is not null)
+        {
+            <span class="badge bg-warning text-dark">@DetectorStatus.TemperatureError</span>
+        }
+        else
+        {
+            <span class="badge bg-secondary">no data</span>
+        }
+    </div>
+</div>
+
+<div class="card mb-4" style="max-width:420px;">
+    <div class="card-body p-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <div>
+                <span class="fw-semibold">Fans 1&ndash;4</span>
+                <span class="small text-muted font-monospace ms-2">12 V &middot; GPIO18 &middot; 25 kHz PWM</span>
+                <div class="small text-muted">
+                    @if (DetectorStatus.FanAuto)
+                    {
+                        <span>auto &mdash; on above @FanOnC.ToString("0")&deg;C, off below @FanOffC.ToString("0")&deg;C</span>
+                    }
+                    else
+                    {
+                        <span class="text-warning-emphasis">manual override</span>
+                    }
+                </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge @(DetectorStatus.FanSpeed > 0 ? "bg-primary" : "bg-secondary")">
+                    @(DetectorStatus.FanSpeed > 0 ? "running" : "off")
+                </span>
+                <div class="form-check form-switch fs-3 mb-0">
+                    <input class="form-check-input" type="checkbox" role="switch"
+                           checked="@(DetectorStatus.FanSpeed > 0)"
+                           @onchange="@(async e => await SetFan(1, e.Value is bool b && b ? FanOn : FanOff))" />
+                </div>
+            </div>
+        </div>
+        @if (!DetectorStatus.FanAuto)
+        {
+            <button class="btn btn-sm btn-outline-primary w-100 mt-2"
+                    @onclick="@(async () => await TrainCommands.SetFanAuto(1))">
+                Return to automatic control
+            </button>
+        }
+    </div>
+</div>
+
 @code {
+    private bool ledOn;
+
+    // Fans run flat out or not at all — no intermediate speeds wanted. The
+    // firmware still takes any 0-100 duty, so this is purely a UI choice.
+    private const int FanOff = 0;
+    private const int FanOn  = 100;
+
+    // Mirrors FAN_TEMP_ON_C / FAN_TEMP_OFF_C in the firmware's detect_config.h;
+    // shown for information only — the thresholds are enforced on the ESP32 so
+    // cooling keeps working if this web app is down.
+    private const double FanOnC  = 28.0;
+    private const double FanOffC = 27.0;
+
     private readonly int[]    sectionSpeeds     = new int[14];
     private readonly string[] sectionDirections = Enumerable.Repeat("forward", 14).ToArray();
     private readonly string[] turnoutPositions  = Enumerable.Repeat("straight", 6).ToArray();
@@ -209,6 +303,13 @@
     private static int ParseInt(object? value) =>
         int.TryParse(value?.ToString(), out var n) ? n : 0;
 
+    private static string TempCss(double c) => c switch
+    {
+        >= 50 => "bg-danger",
+        >= 35 => "bg-warning text-dark",
+        _     => "bg-success",
+    };
+
     private static string SectionStateCss(DetectorStatusService.SectionState state) => state switch
     {
         DetectorStatusService.SectionState.Occupied => "bg-danger",
@@ -231,6 +332,16 @@
     {
         sectionSpeeds[idx] = 0;
         await TrainCommands.SetSection(idx + 1, 0, sectionDirections[idx]);
+    }
+
+    // No local state — the card renders whatever the firmware last reported,
+    // so automatic changes and manual ones are both reflected honestly.
+    private Task SetFan(int id, int speed) => TrainCommands.SetFan(id, speed);
+
+    private async Task SetLed(int id, bool on)
+    {
+        ledOn = on;
+        await TrainCommands.SetLed(id, on);
     }
 
     private async Task SetTurnout(int idx, string position)
