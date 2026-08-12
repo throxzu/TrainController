@@ -43,7 +43,9 @@
 //
 // enablePin   : GPIO connected to L298N ENA or ENB (PWM speed control)
 // ledcChannel : LEDC channel (0–7 for high-speed mode, 0–5 for low-speed)
-// ledcMode    : LEDC_HIGH_SPEED_MODE (sections 1–8) or LEDC_LOW_SPEED_MODE
+// ledcMode    : LEDC_HIGH_SPEED_MODE or LEDC_LOW_SPEED_MODE — each row carries
+//               its own mode and channel, so a row may be moved freely as long
+//               as the channel stays unique within its speed mode
 // dirAddr     : PCF8574 I2C address that holds the direction pins
 // fwdPin      : PCF8574 pin set LOW for forward direction
 // revPin      : PCF8574 pin set LOW for reverse direction
@@ -51,7 +53,22 @@
 // NOTE: GPIO_NUM_33 is currently also defined as PUSH_BUTTON_PIN in
 //       app_main.cpp (section 2). Reassign one before connecting hardware.
 //
-// TODO: update dirAddr / fwdPin / revPin for each section once wired.
+// The table is indexed by the section number printed on the layout diagram, so
+// train/section/N addresses the track a person would call N. Rows 1 and 10 are
+// exchanged relative to the wiring order for that reason: the hardware channel
+// that was built as row 1 physically feeds the section the layout calls 10.
+// This lived in the web app until OTA made a reflash a button press; keeping it
+// here means anything publishing to MQTT gets the same numbering.
+//
+// Addresses, pins and polarity are all verified against the hardware. The
+// polarity pass drove a train through every section: half were wired the other
+// way round and had their fwdPin/revPin exchanged here, so that "forward" now
+// means the same physical direction everywhere. Section 1 was the reference the
+// rest were judged against.
+//
+// If a section is ever rewired, swap its last two columns rather than
+// compensating anywhere else — nothing but turnout_control.cpp reads these, and
+// it applies them symmetrically, so the pair is the whole story.
 // ---------------------------------------------------------------------------
 typedef struct {
     gpio_num_t     enablePin;
@@ -64,19 +81,19 @@ typedef struct {
 
 static const SectionConfig_t SECTION_CONFIG[NUM_SECTIONS] = {
 //   enablePin      ledcCh              ledcMode                dirAddr  fwd  rev
-    {GPIO_NUM_32,  LEDC_CHANNEL_0,  LEDC_HIGH_SPEED_MODE,     0x26,    0,   1},  // section  1
+    {GPIO_NUM_19,  LEDC_CHANNEL_1,  LEDC_LOW_SPEED_MODE,      0x24,    2,   3},  // section  1
     {GPIO_NUM_33,  LEDC_CHANNEL_1,  LEDC_HIGH_SPEED_MODE,     0x26,    2,   3},  // section  2
-    {GPIO_NUM_25,  LEDC_CHANNEL_2,  LEDC_HIGH_SPEED_MODE,     0x26,    4,   5},  // section  3
+    {GPIO_NUM_25,  LEDC_CHANNEL_2,  LEDC_HIGH_SPEED_MODE,     0x26,    5,   4},  // section  3
     {GPIO_NUM_26,  LEDC_CHANNEL_3,  LEDC_HIGH_SPEED_MODE,     0x26,    6,   7},  // section  4
-    {GPIO_NUM_27,  LEDC_CHANNEL_4,  LEDC_HIGH_SPEED_MODE,     0x25,    0,   1},  // section  5
+    {GPIO_NUM_27,  LEDC_CHANNEL_4,  LEDC_HIGH_SPEED_MODE,     0x25,    1,   0},  // section  5
     {GPIO_NUM_14,  LEDC_CHANNEL_5,  LEDC_HIGH_SPEED_MODE,     0x25,    2,   3},  // section  6
-    {GPIO_NUM_16,  LEDC_CHANNEL_6,  LEDC_HIGH_SPEED_MODE,     0x25,    4,   5},  // section  7
+    {GPIO_NUM_16,  LEDC_CHANNEL_6,  LEDC_HIGH_SPEED_MODE,     0x25,    5,   4},  // section  7
     {GPIO_NUM_13,  LEDC_CHANNEL_7,  LEDC_HIGH_SPEED_MODE,     0x25,    6,   7},  // section  8
-    {GPIO_NUM_23,  LEDC_CHANNEL_0,  LEDC_LOW_SPEED_MODE,      0x24,    0,   1},  // section  9
-    {GPIO_NUM_19,  LEDC_CHANNEL_1,  LEDC_LOW_SPEED_MODE,      0x24,    2,   3},  // section 10
-    {GPIO_NUM_17,  LEDC_CHANNEL_2,  LEDC_LOW_SPEED_MODE,      0x24,    4,   5},  // section 11
+    {GPIO_NUM_23,  LEDC_CHANNEL_0,  LEDC_LOW_SPEED_MODE,      0x24,    1,   0},  // section  9
+    {GPIO_NUM_32,  LEDC_CHANNEL_0,  LEDC_HIGH_SPEED_MODE,     0x26,    1,   0},  // section 10
+    {GPIO_NUM_17,  LEDC_CHANNEL_2,  LEDC_LOW_SPEED_MODE,      0x24,    5,   4},  // section 11
     {GPIO_NUM_4,   LEDC_CHANNEL_3,  LEDC_LOW_SPEED_MODE,      0x24,    6,   7},  // section 12
-    {GPIO_NUM_18,  LEDC_CHANNEL_4,  LEDC_LOW_SPEED_MODE,      0x23,    0,   1},  // section 13
+    {GPIO_NUM_18,  LEDC_CHANNEL_4,  LEDC_LOW_SPEED_MODE,      0x23,    1,   0},  // section 13
     {GPIO_NUM_15,  LEDC_CHANNEL_5,  LEDC_LOW_SPEED_MODE,      0x23,    2,   3},  // section 14
 };
 

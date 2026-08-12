@@ -14,21 +14,14 @@ public sealed class TrainCommandService(RabbitMqService rabbit, FirmwareService 
             $"train.turnout.{id}",
             $"{{\"position\":\"{position}\"}}");
 
-    // Sections 1 and 10 are transposed between the UI numbering and the wiring:
-    // the control labelled 1 drives the track the layout calls 10. Corrected
-    // here rather than in the firmware so the fix needs no reflash — meaning
-    // train/section/N still addresses the hardware as wired, and anything
-    // publishing straight to MQTT bypasses this mapping.
-    private static int MapSection(int id) => id switch
-    {
-        1  => 10,
-        10 => 1,
-        _  => id,
-    };
-
+    // The 1/10 transposition that used to be corrected here now lives in the
+    // firmware's SECTION_CONFIG, where the rest of the wiring is described. It
+    // sat in this file only because a reflash was expensive; OTA made it a
+    // button press, and one source of truth means anything publishing straight
+    // to MQTT gets the same numbering the web page uses.
     public Task SetSection(int id, int speed, string direction) =>
         rabbit.PublishAsync(
-            $"train.section.{MapSection(id)}",
+            $"train.section.{id}",
             $"{{\"speed\":{speed},\"direction\":\"{direction}\"}}");
 
     public Task SetFan(int id, int speed) =>
