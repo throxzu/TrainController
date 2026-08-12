@@ -25,7 +25,10 @@ endif()
 
 idf_component_register(SRCS "${srcs}"
                        INCLUDE_DIRS "include"
-                       PRIV_REQUIRES esp_netif driver esp_wifi vfs)
+                       # esp_timer: wifi_connect.c schedules its reconnect
+                       # attempts from a one-shot timer rather than firing them
+                       # straight out of the disconnect event handler.
+                       PRIV_REQUIRES esp_netif driver esp_wifi vfs esp_timer)
 
 if(CONFIG_EXAMPLE_PROVIDE_WIFI_CONSOLE_CMD)
     idf_component_optional_requires(PRIVATE console)

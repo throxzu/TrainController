@@ -103,6 +103,14 @@ public sealed class DetectorStatusService
     public string? Version { get; private set; }
     public string? Built   { get; private set; }
 
+    // Link health. A board that keeps climbing WifiDrops is losing the AP and
+    // recovering; one that goes quiet without the count moving died some other
+    // way. WifiReason is the ESP-IDF disconnect code — 200 is beacon timeout,
+    // 201 no AP found, 8 the AP dropping us on purpose.
+    public uint FreeHeap   { get; private set; }
+    public uint WifiDrops  { get; private set; }
+    public byte WifiReason { get; private set; }
+
     public void RecordHeartbeat(string json)
     {
         _lastSeen = DateTime.UtcNow;
@@ -110,9 +118,12 @@ public sealed class DetectorStatusService
         {
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            if (root.TryGetProperty("uptime",  out var u)) UptimeSeconds = u.GetUInt32();
-            if (root.TryGetProperty("version", out var v)) Version       = v.GetString();
-            if (root.TryGetProperty("built",   out var b)) Built         = b.GetString();
+            if (root.TryGetProperty("uptime",      out var u)) UptimeSeconds = u.GetUInt32();
+            if (root.TryGetProperty("version",     out var v)) Version       = v.GetString();
+            if (root.TryGetProperty("built",       out var b)) Built         = b.GetString();
+            if (root.TryGetProperty("heap",        out var h)) FreeHeap      = h.GetUInt32();
+            if (root.TryGetProperty("wifi_drops",  out var d)) WifiDrops     = d.GetUInt32();
+            if (root.TryGetProperty("wifi_reason", out var r)) WifiReason    = r.GetByte();
         }
         catch { }
     }

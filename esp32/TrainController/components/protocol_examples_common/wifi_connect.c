@@ -16,6 +16,7 @@
 #include "protocol_examples_common.h"
 #include "example_common_private.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 #if CONFIG_EXAMPLE_CONNECT_WIFI
 
@@ -60,11 +61,57 @@ static SemaphoreHandle_t s_semph_get_ip6_addrs = NULL;
 
 static int s_retry_num = 0;
 
+/* True once the interface has ever held an IP. See the disconnect handler. */
+static bool s_had_ip = false;
+
+static esp_timer_handle_t s_reconnect_timer = NULL;
+
+static void example_reconnect_timer_cb(void *arg)
+{
+    esp_err_t err = esp_wifi_connect();
+    /* Already connecting or already up are both fine - the next disconnect
+       event will schedule another attempt if this one does not stick. */
+    if (err != ESP_OK && err != ESP_ERR_WIFI_CONN && err != ESP_ERR_WIFI_NOT_STARTED) {
+        ESP_LOGW(TAG, "esp_wifi_connect() failed: %s", esp_err_to_name(err));
+    }
+}
+
+static void example_schedule_reconnect(uint32_t delay_ms)
+{
+    if (s_reconnect_timer == NULL) {
+        const esp_timer_create_args_t args = {
+            .callback = example_reconnect_timer_cb,
+            .name     = "wifi_reconnect",
+        };
+        if (esp_timer_create(&args, &s_reconnect_timer) != ESP_OK) {
+            ESP_LOGW(TAG, "no timer available - reconnecting inline");
+            example_reconnect_timer_cb(NULL);
+            return;
+        }
+    }
+    esp_timer_stop(s_reconnect_timer);   /* harmless if it is not running */
+    esp_timer_start_once(s_reconnect_timer, (uint64_t)delay_ms * 1000);
+}
+
 static void example_handler_on_wifi_disconnect(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
+    wifi_event_sta_disconnected_t *ev = (wifi_event_sta_disconnected_t *)event_data;
     s_retry_num++;
-    if (s_retry_num > CONFIG_EXAMPLE_WIFI_CONN_MAX_RETRY) {
+
+    /* The retry limit applies to the *initial* connect only.
+     *
+     * Upstream this handler stops calling esp_wifi_connect() for good once the
+     * limit is passed, which suits an example that connects once and exits. On
+     * a permanently installed board it is a trap: every task keeps running, no
+     * watchdog fires and nothing reboots, so the board sits there off the
+     * network until someone power-cycles it. Six attempts are fired back to
+     * back with no delay, so a momentary AP outage is enough to spend them.
+     *
+     * Giving up is still right before the first IP arrives: it lets
+     * example_connect() return an error, and the caller's ESP_ERROR_CHECK
+     * restarts us into a fresh attempt. */
+    if (!s_had_ip && s_retry_num > CONFIG_EXAMPLE_WIFI_CONN_MAX_RETRY) {
         ESP_LOGI(TAG, "WiFi Connect failed %d times, stop reconnect.", s_retry_num);
         /* let example_wifi_sta_do_connect() return */
         if (s_semph_get_ip_addrs) {
@@ -77,12 +124,25 @@ static void example_handler_on_wifi_disconnect(void *arg, esp_event_base_t event
 #endif
         return;
     }
-    ESP_LOGI(TAG, "Wi-Fi disconnected, trying to reconnect...");
-    esp_err_t err = esp_wifi_connect();
-    if (err == ESP_ERR_WIFI_NOT_STARTED) {
-        return;
+
+    /* Back off once we are past the first few attempts, so a long AP outage is
+       not met with a continuous stream of association attempts. */
+    uint32_t delay_ms = (s_retry_num <= CONFIG_EXAMPLE_WIFI_CONN_MAX_RETRY) ? 0
+                      : (s_retry_num <= 20)                                 ? 1000
+                                                                            : 5000;
+
+    ESP_LOGI(TAG, "Wi-Fi disconnected (reason %d), reconnect attempt %d in %u ms",
+             ev ? ev->reason : -1, s_retry_num, (unsigned)delay_ms);
+
+    if (delay_ms == 0) {
+        esp_err_t err = esp_wifi_connect();
+        if (err == ESP_ERR_WIFI_NOT_STARTED) {
+            return;
+        }
+        ESP_ERROR_CHECK(err);
+    } else {
+        example_schedule_reconnect(delay_ms);
     }
-    ESP_ERROR_CHECK(err);
 }
 
 static void example_handler_on_wifi_connect(void *esp_netif, esp_event_base_t event_base,
@@ -97,6 +157,7 @@ static void example_handler_on_sta_got_ip(void *arg, esp_event_base_t event_base
                       int32_t event_id, void *event_data)
 {
     s_retry_num = 0;
+    s_had_ip    = true;
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
     if (!example_is_our_netif(EXAMPLE_NETIF_DESC_STA, event->esp_netif)) {
         return;

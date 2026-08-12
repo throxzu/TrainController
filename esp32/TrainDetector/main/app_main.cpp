@@ -16,6 +16,7 @@ extern "C" {
 #include "esp_system.h"
 #include "esp_event.h"
 #include "esp_netif.h"
+#include "esp_wifi.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -30,6 +31,24 @@ static const char* TAG = "DETECT";
 
 static esp_mqtt_client_handle_t mqtt_client;
 static volatile bool s_mqtt_connected = false;
+static volatile bool s_mqtt_ever      = false;
+
+// Wi-Fi drop bookkeeping, reported in the heartbeat. Reconnection itself is
+// handled by the connect helper; this only records that it happened, and why,
+// so a board that keeps dropping can be told apart from one that crashes.
+// Common reasons: 200 BEACON_TIMEOUT and 201 NO_AP_FOUND point at RF or range,
+// 8 ASSOC_LEAVE means the AP dropped us deliberately.
+static volatile uint32_t s_wifi_drops       = 0;
+static volatile uint8_t  s_wifi_last_reason = 0;
+
+static void wifi_drop_handler(void* /*arg*/, esp_event_base_t /*base*/,
+                              int32_t /*id*/, void* event_data)
+{
+    const wifi_event_sta_disconnected_t* ev =
+        (const wifi_event_sta_disconnected_t*)event_data;
+    s_wifi_drops++;
+    if (ev) s_wifi_last_reason = ev->reason;
+}
 
 // LED commands arrive on the MQTT task but the I2C bus belongs to the detection
 // task, so they are handed over through this queue rather than touching the bus
@@ -421,6 +440,45 @@ static void ota_confirm_image(void)
 }
 
 // ---------------------------------------------------------------------------
+// Connectivity watchdog
+//
+// Every way this board can end up running but unreachable — a Wi-Fi link that
+// never comes back, a wedged MQTT session, a lost DHCP lease — looks identical
+// from the outside and ends with someone crawling under the layout with a USB
+// cable. Rebooting after a few minutes without the broker turns all of them
+// into a self-healing outage. A reset is cheap here: the sensor baseline is
+// republished on reconnect, and the fans resume under their own thermostat.
+//
+// Counting starts only after the first successful connection, so a board that
+// boots while the broker is down waits for it instead of rebooting in a loop.
+// ---------------------------------------------------------------------------
+#define MQTT_LOSS_REBOOT_MS (3 * 60 * 1000)
+
+static void connectivity_watchdog_task(void* /*arg*/)
+{
+    TickType_t last_ok = xTaskGetTickCount();
+
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(10000));
+
+        // An OTA download deliberately leaves the broker idle — never reboot
+        // in the middle of writing a new image.
+        if (s_mqtt_connected || !s_mqtt_ever || s_ota_running) {
+            last_ok = xTaskGetTickCount();
+            continue;
+        }
+
+        uint32_t down_ms = (uint32_t)(xTaskGetTickCount() - last_ok) * portTICK_PERIOD_MS;
+        if (down_ms >= MQTT_LOSS_REBOOT_MS) {
+            ESP_LOGE(TAG, "no broker for %lu s — rebooting to recover",
+                     (unsigned long)(down_ms / 1000));
+            vTaskDelay(pdMS_TO_TICKS(100));   // let the log drain
+            esp_restart();
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Heartbeat task
 // ---------------------------------------------------------------------------
 static void heartbeat_task(void* /*arg*/)
@@ -429,14 +487,18 @@ static void heartbeat_task(void* /*arg*/)
     // be confirmed without a serial port: uptime resets and version changes.
     const esp_app_desc_t* app = esp_app_get_description();
 
-    char payload[192];
+    char payload[288];
     for (;;) {
         if (s_mqtt_connected) {
             uint32_t uptime_s = xTaskGetTickCount() * portTICK_PERIOD_MS / 1000;
             snprintf(payload, sizeof(payload),
                      "{\"status\":\"alive\",\"uptime\":%lu,"
-                     "\"version\":\"%s\",\"built\":\"%s %s\"}",
-                     (unsigned long)uptime_s, app->version, app->date, app->time);
+                     "\"version\":\"%s\",\"built\":\"%s %s\","
+                     "\"heap\":%lu,\"wifi_drops\":%lu,\"wifi_reason\":%u}",
+                     (unsigned long)uptime_s, app->version, app->date, app->time,
+                     (unsigned long)esp_get_free_heap_size(),
+                     (unsigned long)s_wifi_drops,
+                     (unsigned)s_wifi_last_reason);
             esp_mqtt_client_publish(mqtt_client, "train/detector/status", payload, 0, 0, 0);
         }
         vTaskDelay(pdMS_TO_TICKS(10000));
@@ -535,6 +597,7 @@ static void mqtt_event_handler(void* /*arg*/, esp_event_base_t /*base*/,
     case MQTT_EVENT_CONNECTED:
         ESP_LOGI(TAG, "MQTT connected");
         s_mqtt_connected = true;
+        s_mqtt_ever      = true;
         esp_mqtt_client_subscribe(mqtt_client, "train/led/#", 0);
         esp_mqtt_client_subscribe(mqtt_client, "train/fan/#", 0);
         esp_mqtt_client_subscribe(mqtt_client, "train/ota/#", 0);
@@ -583,6 +646,15 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     ESP_ERROR_CHECK(example_connect());
 
+    // Mains-powered board: modem sleep buys nothing and costs reliability.
+    // Dozing between beacons under a layout full of PWM-switched H-bridges is
+    // a good way to miss them and be deauthenticated.
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+
+    // Runs alongside the connect helper's own handler — this one only counts.
+    ESP_ERROR_CHECK(esp_event_handler_register(
+        WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &wifi_drop_handler, NULL));
+
     static esp_mqtt_client_config_t mqtt_cfg = {};
     mqtt_cfg.broker.address.uri                   = CONFIG_BROKER_URL;
     mqtt_cfg.credentials.username                 = "esp32";
@@ -607,4 +679,5 @@ void app_main(void)
     xTaskCreate(heartbeat_task, "heartbeat",   4096, NULL,  5, NULL);
     xTaskCreate(fan_task,       "fan",         2560, NULL,  5, NULL);
     xTaskCreate(temp_task,      "temp",        3072, NULL,  4, NULL);
+    xTaskCreate(connectivity_watchdog_task, "net_wdt", 2560, NULL, 4, NULL);
 }
