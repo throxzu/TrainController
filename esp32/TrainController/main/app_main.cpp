@@ -23,6 +23,10 @@ extern "C" {
 #include "lwip/netdb.h"
 
 #include "esp_log.h"
+#include "esp_http_client.h"
+#include "esp_https_ota.h"
+#include "esp_ota_ops.h"
+#include "esp_app_desc.h"
 #include "mqtt_client.h"
 #include "json_parser.h"
 
@@ -137,6 +141,84 @@ static void dispatch_section(int id, const char* payload, int payload_len)
     xQueueSend(xSectionQueue, &speedCmd, pdMS_TO_TICKS(50));
 }
 
+// ---------------------------------------------------------------------------
+// OTA update over Wi-Fi
+//
+// Triggered by train/ota/controller carrying {"url":"http://host:port/path"}.
+// The image is fetched over plain HTTP — fine on a trusted LAN, and it avoids
+// having to embed and rotate certificates.
+// ---------------------------------------------------------------------------
+#define OTA_DEVICE_ID "controller"
+
+static char          s_ota_url[192];
+static volatile bool s_ota_running = false;
+
+// Minimal JSON string extractor — enough for {"url":"..."} without involving
+// json_parser for a single field. False if the key is missing or too long.
+static bool json_string_field(const char* json, const char* key,
+                              char* out, size_t out_len)
+{
+    char pattern[24];
+    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
+
+    const char* p = strstr(json, pattern);
+    if (!p) return false;
+    p = strchr(p + strlen(pattern), ':');
+    if (!p) return false;
+    p = strchr(p, '"');
+    if (!p) return false;
+    p++;
+
+    const char* end = strchr(p, '"');
+    if (!end) return false;
+
+    size_t n = (size_t)(end - p);
+    if (n == 0 || n >= out_len) return false;
+    memcpy(out, p, n);
+    out[n] = '\0';
+    return true;
+}
+
+static void ota_task(void* /*arg*/)
+{
+    ESP_LOGW(TAG, "OTA starting from %s", s_ota_url);
+
+    esp_http_client_config_t http = {};
+    http.url               = s_ota_url;
+    http.timeout_ms        = 10000;
+    http.keep_alive_enable = true;
+
+    esp_https_ota_config_t ota = {};
+    ota.http_config = &http;
+
+    esp_err_t err = esp_https_ota(&ota);
+    if (err == ESP_OK) {
+        ESP_LOGW(TAG, "OTA complete — rebooting into the new image");
+        vTaskDelay(pdMS_TO_TICKS(500));   // let the log drain first
+        esp_restart();
+    }
+
+    ESP_LOGE(TAG, "OTA failed: %s — staying on the current image", esp_err_to_name(err));
+    s_ota_running = false;
+    vTaskDelete(NULL);
+}
+
+// With rollback enabled the bootloader leaves a freshly written image marked
+// PENDING_VERIFY and reverts to the previous slot on the next boot unless it is
+// confirmed. Confirming only once MQTT is up means an image that cannot reach
+// the broker undoes itself instead of needing USB recovery.
+static void ota_confirm_image(void)
+{
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    esp_ota_img_states_t   state;
+
+    if (esp_ota_get_state_partition(running, &state) == ESP_OK &&
+        state == ESP_OTA_IMG_PENDING_VERIFY) {
+        esp_ota_mark_app_valid_cancel_rollback();
+        ESP_LOGW(TAG, "new image confirmed good, rollback cancelled");
+    }
+}
+
 // Route an incoming MQTT message to the right dispatcher based on topic
 static void handle_mqtt_message(const char* topic,   int topic_len,
                                 const char* payload, int payload_len)
@@ -151,6 +233,31 @@ static void handle_mqtt_message(const char* topic,   int topic_len,
         dispatch_turnout(id, payload, payload_len);
     } else if (sscanf(topic_buf, "train/section/%d", &id) == 1) {
         dispatch_section(id, payload, payload_len);
+    } else if (strncmp(topic_buf, "train/ota/", 10) == 0) {
+        // Exact device match matters more here than anywhere: this board
+        // subscribes to train/# and therefore also receives the detector's
+        // update command. Acting on it would flash detector firmware onto the
+        // controller and take out the whole layout until someone reaches it
+        // with a USB cable.
+        if (strcmp(topic_buf + 10, OTA_DEVICE_ID) != 0) {
+            ESP_LOGD(TAG, "ota for another device: %s", topic_buf);
+            return;
+        }
+        if (s_ota_running) {
+            ESP_LOGW(TAG, "ota already in progress, ignoring");
+            return;
+        }
+        char payload_buf[224] = {};
+        int  plen = (payload_len < (int)sizeof(payload_buf) - 1)
+                  ? payload_len : (int)sizeof(payload_buf) - 1;
+        memcpy(payload_buf, payload, plen);
+
+        if (!json_string_field(payload_buf, "url", s_ota_url, sizeof(s_ota_url))) {
+            ESP_LOGW(TAG, "ota payload has no usable url: %s", payload_buf);
+            return;
+        }
+        s_ota_running = true;
+        xTaskCreate(ota_task, "ota", 8192, NULL, 5, NULL);
     } else {
         ESP_LOGD(TAG, "unhandled topic: %s", topic_buf);
     }
@@ -171,6 +278,8 @@ static void mqtt_event_handler(void* handler_args, esp_event_base_t base,
         s_mqtt_connected = true;
         esp_mqtt_client_subscribe(client, "train/#", 0);
         ESP_LOGI(TAG, "subscribed to train/#");
+        // Reaching the broker is the bar for calling a new image good.
+        ota_confirm_image();
         break;
 
     case MQTT_EVENT_DISCONNECTED:
@@ -197,7 +306,11 @@ static void mqtt_event_handler(void* handler_args, esp_event_base_t base,
 // ---------------------------------------------------------------------------
 static void heartbeat_task(void* /*arg*/)
 {
-    char payload[256];
+    // Version and build time travel with the heartbeat so a wireless update can
+    // be confirmed without a serial port: uptime resets and version changes.
+    const esp_app_desc_t* app = esp_app_get_description();
+
+    char payload[384];
     for (;;) {
         if (s_mqtt_connected) {
             uint32_t uptime_s = xTaskGetTickCount() * portTICK_PERIOD_MS / 1000;
@@ -212,12 +325,14 @@ static void heartbeat_task(void* /*arg*/)
             strncat(scan_buf, "]", sizeof(scan_buf) - strlen(scan_buf) - 1);
 
             snprintf(payload, sizeof(payload),
-                     "{\"status\":\"alive\",\"uptime\":%lu,\"cmds\":%lu,\"i2c_mask\":%u,\"i2c_err\":%lu,\"scan\":%s}",
+                     "{\"status\":\"alive\",\"uptime\":%lu,\"cmds\":%lu,\"i2c_mask\":%u,"
+                     "\"i2c_err\":%lu,\"scan\":%s,\"version\":\"%s\",\"built\":\"%s %s\"}",
                      (unsigned long)uptime_s,
                      (unsigned long)g_cmds_dispatched,
                      (unsigned)g_i2c_ok_mask,
                      (unsigned long)g_i2c_errors,
-                     scan_buf);
+                     scan_buf,
+                     app->version, app->date, app->time);
             esp_mqtt_client_publish(mqtt_client, "train/status", payload, 0, 0, 0);
             ESP_LOGI(TAG, "heartbeat: uptime=%lu cmds=%lu i2c_mask=0x%02X i2c_err=%lu",
                      (unsigned long)uptime_s, (unsigned long)g_cmds_dispatched,
@@ -260,6 +375,16 @@ void app_main(void)
     ESP_LOGI(TAG, "[APP] free heap: %" PRIu32 " bytes", esp_get_free_heap_size());
     ESP_LOGI(TAG, "[APP] IDF version: %s", esp_get_idf_version());
 
+    // Which slot booted, and what is in it. After a wireless update this is the
+    // quickest confirmation that the new image actually took: the label flips
+    // between ota_0 and ota_1 and the build time moves.
+    {
+        const esp_partition_t* running = esp_ota_get_running_partition();
+        const esp_app_desc_t*  desc    = esp_app_get_description();
+        ESP_LOGW(TAG, "running from '%s' — version %s, built %s %s",
+                 running->label, desc->version, desc->date, desc->time);
+    }
+
     esp_log_level_set("*",           ESP_LOG_INFO);
     esp_log_level_set("MOTOR",       ESP_LOG_INFO);
     esp_log_level_set("PCF",         ESP_LOG_INFO);
@@ -282,5 +407,8 @@ void app_main(void)
     // FreeRTOS tasks
     xTaskCreate(turnout_control_task, "pcf_task",    4096, xPcfQueue,     14, NULL);
     xTaskCreate(motor_l298n_task,     "motor_task",  4096, xSectionQueue, 13, NULL);
-    xTaskCreate(heartbeat_task,       "heartbeat",   2048, NULL,           5, NULL);
+    // 4096, not 2048: the heartbeat payload buffer grew when version and build
+    // time were added, and snprintf's own frame on top of it overflowed the old
+    // stack — intermittently, which made it look like a phantom crash.
+    xTaskCreate(heartbeat_task,       "heartbeat",   4096, NULL,           5, NULL);
 }

@@ -7,4 +7,5 @@ idf_component_register(
         esp_wifi esp_netif esp_event nvs_flash
         mqtt esp_system log driver lwip
         freertos heap espressif__json_parser
+        esp_https_ota app_update
 )

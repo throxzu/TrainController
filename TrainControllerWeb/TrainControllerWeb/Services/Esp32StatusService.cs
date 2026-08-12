@@ -18,6 +18,11 @@ public sealed class Esp32StatusService
     public int    I2cFoundCount => System.Numerics.BitOperations.PopCount(I2cOkMask);
     public byte[] I2cScanAddrs { get; private set; } = [];
 
+    // Reported by the firmware so a wireless update can be confirmed without a
+    // serial port — the version changes and the uptime resets.
+    public string? Version { get; private set; }
+    public string? Built   { get; private set; }
+
     public void RecordHeartbeat(string json)
     {
         _lastSeen = DateTime.UtcNow;
@@ -31,6 +36,8 @@ public sealed class Esp32StatusService
             if (root.TryGetProperty("i2c_err",  out var e)) I2cErrors      = e.GetUInt32();
             if (root.TryGetProperty("scan",     out var s) && s.ValueKind == JsonValueKind.Array)
                 I2cScanAddrs = s.EnumerateArray().Select(x => x.GetByte()).ToArray();
+            if (root.TryGetProperty("version",  out var v)) Version = v.GetString();
+            if (root.TryGetProperty("built",    out var b)) Built   = b.GetString();
         }
         catch { /* old firmware without fields — ignore */ }
     }

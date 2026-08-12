@@ -1,0 +1,16 @@
+# Two OTA app slots so firmware can be updated over Wi-Fi.
+#
+# The chip has 4 MB of flash (the build previously declared only 2 MB, which is
+# why the bootloader logged "Detected size(4096k) larger than the size in the
+# binary image header"). 1.5 MB per slot against a ~950 KB app leaves generous
+# headroom, and ~960 KB stays free at the end for a future filesystem.
+#
+# Changing this layout requires a USB flash — the running firmware cannot
+# rewrite the partition table it is executing from.
+#
+# Name,     Type, SubType, Offset,   Size
+nvs,        data, nvs,     0x9000,   0x4000
+otadata,    data, ota,     0xd000,   0x2000
+phy_init,   data, phy,     0xf000,   0x1000
+ota_0,      app,  ota_0,   0x10000,  0x180000
+ota_1,      app,  ota_1,   0x190000, 0x180000

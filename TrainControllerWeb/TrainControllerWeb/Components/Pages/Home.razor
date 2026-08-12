@@ -4,6 +4,7 @@
 @inject RabbitMqService RabbitMq
 @inject Esp32StatusService Esp32Status
 @inject DetectorStatusService DetectorStatus
+@inject FirmwareService Firmware
 @implements IDisposable
 
 <PageTitle>Train Controller</PageTitle>
@@ -70,6 +71,11 @@
     </div>
 }
 
+<h4>Track Layout</h4>
+<img src="track_layout.png" alt="Track Layout"
+     style="width:579px !important; height:auto !important; display:block;"
+     class="mb-4" />
+
 <h4>Sections</h4>
 <div class="row g-2 mb-4">
     @for (int i = 0; i < 14; i++)
@@ -122,9 +128,6 @@
         </div>
     }
 </div>
-
-<h4 class="mt-4">Track Layout</h4>
-<img src="track_layout.png" alt="Track Layout" style="width:579px !important; height:auto !important; display:block;" />
 
 @{
     var sensors   = DetectorStatus.AllSensors().ToList();
@@ -265,8 +268,59 @@
     </div>
 </div>
 
+<h4 class="mt-4">Firmware</h4>
+<div class="card mb-4" style="max-width:620px;">
+    <div class="card-body p-3">
+        <div class="small text-muted mb-3">
+            Updates are sent over Wi-Fi. The board downloads the image from this PC and
+            reboots &mdash; sections stop and turnouts lose their position, so update with
+            trains stopped.
+        </div>
+
+        @foreach (var dev in new[] { "detector", "controller" })
+        {
+            var img     = Firmware.Describe(dev);
+            var running = dev == "detector" ? DetectorStatus.Version : Esp32Status.Version;
+            var alive   = dev == "detector" ? DetectorStatus.IsAlive : Esp32Status.IsAlive;
+
+            <div class="d-flex justify-content-between align-items-center border-top py-2">
+                <div>
+                    <span class="fw-semibold text-capitalize">@dev</span>
+                    @if (!alive)
+                    {
+                        <span class="badge bg-danger ms-2">offline</span>
+                    }
+                    <div class="small text-muted font-monospace">
+                        built: @(img.Exists ? $"{img.SizeText} · {img.BuiltLocal:yyyy-MM-dd HH:mm}" : "not built")
+                    </div>
+                    <div class="small text-muted font-monospace">
+                        running: @(running ?? "unknown")
+                    </div>
+                </div>
+                <button class="btn btn-sm btn-outline-warning"
+                        disabled="@(!img.Exists || !alive || otaSent.Contains(dev))"
+                        @onclick="@(async () => await SendOta(dev))">
+                    @(otaSent.Contains(dev) ? "Sent…" : "Update over Wi-Fi")
+                </button>
+            </div>
+        }
+
+        @if (otaSent.Count > 0)
+        {
+            <div class="small text-muted mt-2">
+                Watch the <em>running</em> version and the uptime badge above: a successful
+                update resets uptime and changes the version.
+            </div>
+        }
+    </div>
+</div>
+
 @code {
     private bool ledOn;
+
+    // Boards that have been sent an update this page-load. Only guards against
+    // double-clicking; the firmware also refuses a second concurrent update.
+    private readonly HashSet<string> otaSent = new();
 
     // Fans run flat out or not at all — no intermediate speeds wanted. The
     // firmware still takes any 0-100 duty, so this is purely a UI choice.
@@ -337,6 +391,12 @@
     // No local state — the card renders whatever the firmware last reported,
     // so automatic changes and manual ones are both reflected honestly.
     private Task SetFan(int id, int speed) => TrainCommands.SetFan(id, speed);
+
+    private async Task SendOta(string device)
+    {
+        otaSent.Add(device);
+        await TrainCommands.SendOtaUpdate(device);
+    }
 
     private async Task SetLed(int id, bool on)
     {

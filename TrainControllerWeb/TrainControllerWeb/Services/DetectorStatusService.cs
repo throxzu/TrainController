@@ -98,14 +98,21 @@ public sealed class DetectorStatusService
         OnDetectionChanged?.Invoke();
     }
 
+    // Reported by the firmware so a wireless update can be confirmed without a
+    // serial port — the version changes and the uptime resets.
+    public string? Version { get; private set; }
+    public string? Built   { get; private set; }
+
     public void RecordHeartbeat(string json)
     {
         _lastSeen = DateTime.UtcNow;
         try
         {
             using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("uptime", out var u))
-                UptimeSeconds = u.GetUInt32();
+            var root = doc.RootElement;
+            if (root.TryGetProperty("uptime",  out var u)) UptimeSeconds = u.GetUInt32();
+            if (root.TryGetProperty("version", out var v)) Version       = v.GetString();
+            if (root.TryGetProperty("built",   out var b)) Built         = b.GetString();
         }
         catch { }
     }

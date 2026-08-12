@@ -149,10 +149,26 @@ static const SensorPin_t LED_PINS[NUM_LEDS] = {
 #define TEMP_SERIES_OHMS   10000.0f
 #define TEMP_SUPPLY_MV     3300.0f
 
-// Beta-equation constants for the KY-013's 10 k NTC.
-#define TEMP_NOMINAL_OHMS  10000.0f
+// Beta-equation constants, calibrated against this module.
+//
+// At a known 25 C the divider reads ~1572 mV, giving ~9.1 k through the
+// formula below — near enough the datasheet 10 k to confirm this is a stock
+// 10 k NTC and that the divider is wired correctly. R0 is anchored to the
+// measured value so the curve is exact at 25 C; the ~1 k shortfall against
+// nominal absorbs part tolerance and ADC error.
+//
+// Recalibrate if the sensor is rewired: this constant encodes the divider as
+// actually built, so a wiring change invalidates it.
+#define TEMP_NOMINAL_OHMS  9100.0f
 #define TEMP_NOMINAL_K     298.15f            // 25 C
 #define TEMP_BETA          3950.0f
+
+// Plausibility band. A disconnected sensor does not read at the rail — the
+// surviving resistor pulls the divider most of the way there, which converts
+// to an extreme but not obviously invalid temperature. Anything outside this
+// range is a wiring fault, not weather, and is reported as such.
+#define TEMP_MIN_VALID_C   -20.0f
+#define TEMP_MAX_VALID_C   100.0f
 
 #define DETECT_POLL_MS  20
 
